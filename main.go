@@ -12,6 +12,7 @@ func init() {
 }
 
 func main() {
+	initializers.SessionStorage()
 	app := fiber.New()
 
 	routes.Setup(app)

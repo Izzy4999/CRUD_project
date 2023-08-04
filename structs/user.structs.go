@@ -7,3 +7,8 @@ type Register struct {
 	PhoneNumber string `json:"phone_number" validate:"required,min=8,max=12"`
 	Password    string `json:"password" validate:"required,min=6,max=8"`
 }
+
+type Login struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
+}

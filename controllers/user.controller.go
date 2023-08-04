@@ -79,3 +79,65 @@ func Register(c *fiber.Ctx) error {
 		},
 	})
 }
+
+func Login(c *fiber.Ctx) error {
+	v := validator.New()
+	var userModel models.User
+	user := &structs.Login{}
+
+	err := c.BodyParser(user)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   err,
+		})
+	}
+
+	err = v.Struct(*user)
+	if err != nil {
+		for _, err := range err.(validator.ValidationErrors) {
+			return c.Status(400).JSON(&fiber.Map{
+				"success": false,
+				"error":   fmt.Sprintf("%v %v %v", err.Field(), err.Tag(), err.Param()),
+			})
+		}
+	}
+
+	initializers.DB.Where("email = ?", user.Email).First(&userModel)
+	if userModel.Id == 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"success": false,
+			"error":   "incorrect email or password",
+		})
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(userModel.Password), []byte(user.Password))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "incorrect email or password",
+		})
+	}
+
+	sess, err := initializers.Store.Get(c)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"err":     err.Error(),
+		})
+	}
+
+	sess.Set("userId", userModel.Id)
+
+	err = sess.Save()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"err":     err.Error(),
+		})
+	}
+
+	return c.Status(200).JSON(fiber.Map{
+		"success": true,
+	})
+}
