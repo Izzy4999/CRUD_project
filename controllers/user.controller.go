@@ -44,6 +44,14 @@ func Register(c *fiber.Ctx) error {
 		})
 	}
 
+	initializers.DB.Where("phone_number = ?", user.PhoneNumber).First(&userModel)
+	if userModel.Id != 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"success": false,
+			"error":   "number already in use",
+		})
+	}
+
 	hashPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), 10)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -76,6 +84,7 @@ func Register(c *fiber.Ctx) error {
 			LastName:    userDetails.LastName,
 			PhoneNumber: userDetails.PhoneNumber,
 			Email:       userDetails.Email,
+			Id:          userDetails.Id,
 		},
 	})
 }
@@ -171,7 +180,7 @@ func GetUserDetails(c *fiber.Ctx) error {
 
 func GetUserById(c *fiber.Ctx) error {
 	var user models.User
-	userId := c.Params("userId")
+	userId := c.Params("id")
 	if userId == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"success": false,

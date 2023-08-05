@@ -14,4 +14,5 @@ func Setup(app *fiber.App) {
 
 	auth := api.Group("/auth", middlewares.LoggedIn())
 	auth.Get("/me", controllers.GetUserDetails)
+	auth.Get("/user/:id", controllers.GetUserById)
 }
