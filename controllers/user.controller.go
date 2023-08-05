@@ -141,3 +141,54 @@ func Login(c *fiber.Ctx) error {
 		"success": true,
 	})
 }
+
+func GetUserDetails(c *fiber.Ctx) error {
+	var user models.User
+
+	userId := c.Locals("userId")
+	if userId == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "not authenticated",
+		})
+	}
+
+	fmt.Println(userId)
+	initializers.DB.Select("id,first_name, last_name, email, phone_number").Find(&user, userId)
+
+	if user.Id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "user not found",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"data":    user,
+	})
+}
+
+func GetUserById(c *fiber.Ctx) error {
+	var user models.User
+	userId := c.Params("userId")
+	if userId == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "no id passed",
+		})
+	}
+
+	initializers.DB.Select("id, first_name, last_name,phone_number").Find(&user, userId)
+	if user.Id == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"success": false,
+			"error":   "user not found",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"success": true,
+		"data":    user,
+	})
+}

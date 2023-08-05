@@ -11,7 +11,7 @@ var DB *gorm.DB
 
 func ConnectDB() {
 	var err error
-	dbURI := os.Getenv("DB_URI")
+	dbURI := os.Getenv("LOCAL_URI")
 
 	DB, err = gorm.Open(postgres.Open(dbURI), &gorm.Config{})
 	if err != nil {
