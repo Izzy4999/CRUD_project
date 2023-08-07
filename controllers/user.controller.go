@@ -2,10 +2,12 @@ package controllers
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/Izzy499/crud_api/initializers"
 	"github.com/Izzy499/crud_api/models"
 	"github.com/Izzy499/crud_api/structs"
+	"github.com/Izzy499/crud_api/utils"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
@@ -14,7 +16,6 @@ import (
 func Register(c *fiber.Ctx) error {
 	v := validator.New()
 	var userModel *models.User
-
 	user := &structs.Register{}
 
 	err := c.BodyParser(user)
@@ -69,6 +70,28 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	result := initializers.DB.Create(&userDetails)
+	if result.Error != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   result.Error,
+		})
+	}
+
+	code, err := utils.GenerateRandomNumber(4)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   err,
+		})
+	}
+
+	emailDetails := models.Verify_Email{
+		Email:      user.Email,
+		UserId:     userDetails.Id,
+		SecretCode: strconv.Itoa(code),
+	}
+
+	result = initializers.DB.Create(&emailDetails)
 	if result.Error != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"success": false,
@@ -148,6 +171,57 @@ func Login(c *fiber.Ctx) error {
 
 	return c.Status(200).JSON(fiber.Map{
 		"success": true,
+	})
+}
+
+func VerifyUser(c *fiber.Ctx) error {
+	var verifyEmail models.Verify_Email
+	v := validator.New()
+	verificationCode := &structs.Verify{}
+
+	err := c.BodyParser(verificationCode)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   err,
+		})
+	}
+
+	err = v.Struct(*verificationCode)
+	if err != nil {
+		for _, err := range err.(validator.ValidationErrors) {
+			return c.Status(400).JSON(&fiber.Map{
+				"success": false,
+				"error":   fmt.Sprintf("%v %v %v", err.Field(), err.Tag(), err.Param()),
+			})
+		}
+	}
+
+	initializers.DB.Where("email = ?", verificationCode.Email).First(&verifyEmail)
+	if verifyEmail.Id == 0 {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+			"success": false,
+			"error":   "incorrect email or password",
+		})
+	}
+
+	if verificationCode.Code != verifyEmail.SecretCode {
+		return c.Status(400).JSON(fiber.Map{
+			"success": false,
+			"message": "wrong verification code",
+		})
+	}
+	initializers.DB.Model(&verifyEmail).Update("is_used", true)
+	if verifyEmail.IsUsed != true {
+		return c.Status(400).JSON(fiber.Map{
+			"success": false,
+			"message": "failed to verify",
+		})
+	}
+
+	return c.Status(200).JSON(fiber.Map{
+		"success": true,
+		"message": "Verification successful",
 	})
 }
 
