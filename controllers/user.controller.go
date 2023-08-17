@@ -3,6 +3,7 @@ package controllers
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/Izzy499/crud_api/initializers"
 	"github.com/Izzy499/crud_api/models"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/gomail.v2"
 )
 
 func Register(c *fiber.Ctx) error {
@@ -70,28 +72,6 @@ func Register(c *fiber.Ctx) error {
 	}
 
 	result := initializers.DB.Create(&userDetails)
-	if result.Error != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"success": false,
-			"error":   result.Error,
-		})
-	}
-
-	code, err := utils.GenerateRandomNumber(4)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"success": false,
-			"error":   err,
-		})
-	}
-
-	emailDetails := models.Verify_Email{
-		Email:      user.Email,
-		UserId:     userDetails.Id,
-		SecretCode: strconv.Itoa(code),
-	}
-
-	result = initializers.DB.Create(&emailDetails)
 	if result.Error != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"success": false,
@@ -169,13 +149,18 @@ func Login(c *fiber.Ctx) error {
 		})
 	}
 
+	fmt.Println(sess.ID())
+
 	return c.Status(200).JSON(fiber.Map{
 		"success": true,
+		// "session_id": ,
 	})
 }
 
 func VerifyUser(c *fiber.Ctx) error {
+	userId := c.Locals("userId")
 	var verifyEmail models.Verify_Email
+	var userModel models.User
 	v := validator.New()
 	verificationCode := &structs.Verify{}
 
@@ -197,13 +182,22 @@ func VerifyUser(c *fiber.Ctx) error {
 		}
 	}
 
-	initializers.DB.Where("email = ?", verificationCode.Email).First(&verifyEmail)
+	initializers.DB.Select("id,first_name, last_name, email, phone_number").Find(&userModel, userId)
+	if userModel.Id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "user not found",
+		})
+	}
+
+	initializers.DB.Where("email = ? and is_used=?", userModel.Email, false).First(&verifyEmail)
 	if verifyEmail.Id == 0 {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"success": false,
-			"error":   "incorrect email or password",
+			"error":   "user not found",
 		})
 	}
+	var check time.Time
 
 	if verificationCode.Code != verifyEmail.SecretCode {
 		return c.Status(400).JSON(fiber.Map{
@@ -211,8 +205,24 @@ func VerifyUser(c *fiber.Ctx) error {
 			"message": "wrong verification code",
 		})
 	}
+
+	if check.After(verifyEmail.ExpiredAt) {
+		return c.Status(400).JSON(fiber.Map{
+			"success": false,
+			"error":   "code expired",
+		})
+	}
+
 	initializers.DB.Model(&verifyEmail).Update("is_used", true)
-	if verifyEmail.IsUsed != true {
+	if !verifyEmail.IsUsed {
+		return c.Status(400).JSON(fiber.Map{
+			"success": false,
+			"message": "failed to verify",
+		})
+	}
+
+	initializers.DB.Model(&userModel).Update("is_email_verified", true)
+	if !userModel.IsEmailVerified {
 		return c.Status(400).JSON(fiber.Map{
 			"success": false,
 			"message": "failed to verify",
@@ -222,6 +232,72 @@ func VerifyUser(c *fiber.Ctx) error {
 	return c.Status(200).JSON(fiber.Map{
 		"success": true,
 		"message": "Verification successful",
+	})
+}
+
+func GenerateVerificationToken(c *fiber.Ctx) error {
+	var user models.User
+	var verifyEmail models.Verify_Email
+	userId := c.Locals("userId")
+
+	code, err := utils.GenerateRandomNumber(4)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"success": false,
+			"error":   err,
+		})
+	}
+
+	initializers.DB.Select("id,first_name, last_name, email, phone_number, is_email_verified").Find(&user, userId)
+	if user.Id == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "user not found",
+		})
+	}
+	if user.IsEmailVerified {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   "email verified already",
+		})
+	}
+
+	initializers.DB.Where("email=?", user.Email).Last(&verifyEmail)
+	if verifyEmail.Id != 0 {
+		initializers.DB.Model(&verifyEmail).Update("is_used", true)
+	}
+
+	emailDetails := models.Verify_Email{
+		Email:      user.Email,
+		UserId:     user.Id,
+		SecretCode: strconv.Itoa(code),
+		ExpiredAt:  time.Now().Add(time.Minute * 15),
+	}
+
+	result := initializers.DB.Create(&emailDetails)
+	if result.Error != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"success": false,
+			"error":   result.Error,
+		})
+	}
+
+	m := gomail.NewMessage()
+	m.SetHeader("From", "medly.medly.social@gmail.com")
+	m.SetHeader("To", user.Email)
+	m.SetHeader("Subject", "Your Verification Code !")
+	m.SetBody("text/html", fmt.Sprintf("Hello <b>%v %v</b> <br /> <p>Your Verification Code is: %v</p><br /><p>Thank you for registering.</p> ", user.FirstName, user.LastName, code))
+
+	d := gomail.NewDialer("smtp.gmail.com", 587, "medly.medly.social@gmail.com", "idsyzcuvzbdqvxnt")
+
+	// Send the email to Bob, Cora and Dan.
+	if err := d.DialAndSend(m); err != nil {
+		panic(err)
+	}
+
+	return c.Status(200).JSON(fiber.Map{
+		"success": true,
+		"code":    "code sent to email",
 	})
 }
 
@@ -237,7 +313,7 @@ func GetUserDetails(c *fiber.Ctx) error {
 	}
 
 	fmt.Println(userId)
-	initializers.DB.Select("id,first_name, last_name, email, phone_number").Find(&user, userId)
+	initializers.DB.Select("id,first_name, last_name, email, phone_number, is_email_verified").Find(&user, userId)
 
 	if user.Id == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -273,5 +349,25 @@ func GetUserById(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"success": true,
 		"data":    user,
+	})
+}
+
+func Logout(c *fiber.Ctx) error {
+	sess, err := initializers.Store.Get(c)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"success": false,
+			"error":   err.Error(),
+		})
+	}
+	err = sess.Destroy()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{
+			"success": false,
+			"error":   err.Error(),
+		})
+	}
+	return c.Status(200).JSON(fiber.Map{
+		"success": true,
 	})
 }

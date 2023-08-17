@@ -11,8 +11,9 @@ var Store *session.Store
 func SessionStorage() {
 	Store = session.New(
 		session.Config{
-			CookieHTTPOnly: true,
 			Expiration:     time.Hour * 2,
+			CookieHTTPOnly: false,
+			CookieSecure:   true,
 		},
 	)
 }

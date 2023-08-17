@@ -14,6 +14,5 @@ type Login struct {
 }
 
 type Verify struct {
-	Code  string `json:"code" validate:"required"`
-	Email string `json:"email" validate:"required,email"`
+	Code string `json:"code" validate:"required"`
 }

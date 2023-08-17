@@ -11,9 +11,15 @@ func Setup(app *fiber.App) {
 
 	api.Post("/login", controllers.Login)
 	api.Post("/register", controllers.Register)
-	api.Post("/verify", controllers.VerifyUser)
 
 	auth := api.Group("/auth", middlewares.LoggedIn())
+	auth.Get("/generate-token", controllers.GenerateVerificationToken)
+	auth.Get("/post", controllers.GetAllPost)
 	auth.Get("/me", controllers.GetUserDetails)
 	auth.Get("/user/:id", controllers.GetUserById)
+	auth.Post("/verify", controllers.VerifyUser)
+	auth.Post("/post", controllers.CreatePost)
+	auth.Post("/comment", controllers.AddComment)
+	auth.Get("/logout", controllers.Logout)
+
 }
